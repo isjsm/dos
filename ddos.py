@@ -111,10 +111,10 @@ frame = ttk.Frame(root, padding=10)
 frame.pack(fill="both", expand=True)
 
 attack_type_var = tk.StringVar(value="HTTP")
-ttK.Label(frame, text="Attack Type:").pack(anchor="w")
-ttK.OptionMenu(frame, attack_type_var, "HTTP", "UDP", "TCP", "HTTP", "HTTPS").pack(fill="x")
+ttk.Label(frame, text="Attack Type:").pack(anchor="w")
+ttk.OptionMenu(frame, attack_type_var, "HTTP", "UDP", "TCP", "HTTP", "HTTPS").pack(fill="x")
 
-ttK.Label(frame, text="Targets (IP:Port per line):").pack(anchor="w")
+ttk.Label(frame, text="Targets (IP:Port per line):").pack(anchor="w")
 targets_text = tk.Text(frame, height=10)
 targets_text.pack(fill="both", expand=True)
 
